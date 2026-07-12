@@ -1,0 +1,6 @@
+# Trash local files
+.DS_Store
+.vscode
+
+# Python 
+__pycache__/

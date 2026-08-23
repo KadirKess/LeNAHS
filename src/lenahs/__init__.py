@@ -1,5 +1,5 @@
 """LeNAHS code."""
 
-from lenahs.hierarchy import FlatZoneGraph, ParentTree, TreeKind
+from lenahs.component_tree import ComponentTree, ComponentTreeKind, FlatZoneGraph
 
-__all__ = ["FlatZoneGraph", "ParentTree", "TreeKind"]
+__all__ = ["ComponentTree", "ComponentTreeKind", "FlatZoneGraph"]

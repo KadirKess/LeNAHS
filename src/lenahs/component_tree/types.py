@@ -1,4 +1,4 @@
-"""Small records shared by hierarchy construction and conversion."""
+"""Small records shared by component-tree construction and conversion."""
 
 from dataclasses import dataclass
 from enum import StrEnum
@@ -7,7 +7,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 
-class TreeKind(StrEnum):
+class ComponentTreeKind(StrEnum):
     MAX_TREE = "max_tree"
     MIN_TREE = "min_tree"
 
@@ -22,6 +22,8 @@ class FlatZoneGraph:
 
 
 @dataclass
-class ParentTree:
-    kind: TreeKind
+class ComponentTree:
+    """One-parent-per-flat-zone encoding of a max-tree or min-tree."""
+
+    kind: ComponentTreeKind
     parents: NDArray[np.integer]

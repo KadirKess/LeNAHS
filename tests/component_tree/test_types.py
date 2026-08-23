@@ -4,7 +4,7 @@ import sys
 
 import numpy as np
 
-from lenahs.hierarchy import FlatZoneGraph, ParentTree, TreeKind
+from lenahs.component_tree import ComponentTree, ComponentTreeKind, FlatZoneGraph
 
 
 def test_flat_zone_graph_exposes_supplied_fields_without_conversion():
@@ -29,20 +29,20 @@ def test_flat_zone_graph_exposes_supplied_fields_without_conversion():
     assert graph.anchors is anchors
 
 
-def test_parent_tree_contains_one_kind_and_one_parent_array():
+def test_component_tree_contains_one_kind_and_one_parent_array():
     parents = np.array([0, 0], dtype=np.int64)
 
-    tree = ParentTree(kind=TreeKind.MAX_TREE, parents=parents)
+    tree = ComponentTree(kind=ComponentTreeKind.MAX_TREE, parents=parents)
 
-    assert tree.kind is TreeKind.MAX_TREE
+    assert tree.kind is ComponentTreeKind.MAX_TREE
     assert tree.parents is parents
     assert set(vars(tree)) == {"kind", "parents"}
 
 
-def test_parent_tree_constructor_does_not_convert_legacy_root():
+def test_component_tree_constructor_does_not_convert_legacy_root():
     parents = np.array([-1, 0], dtype=np.int64)
 
-    tree = ParentTree(kind=TreeKind.MAX_TREE, parents=parents)
+    tree = ComponentTree(kind=ComponentTreeKind.MAX_TREE, parents=parents)
 
     assert tree.parents is parents
     assert tree.parents.tolist() == [-1, 0]
@@ -54,7 +54,7 @@ def test_public_imports_do_not_require_deferred_frameworks(monkeypatch):
 
     def guarded_import(name, *args, **kwargs):
         if name.split(".", 1)[0] in forbidden:
-            raise AssertionError(f"public hierarchy import attempted to load {name}")
+            raise AssertionError(f"public component-tree import attempted to load {name}")
         return original_import(name, *args, **kwargs)
 
     for module_name in list(sys.modules):
@@ -64,5 +64,5 @@ def test_public_imports_do_not_require_deferred_frameworks(monkeypatch):
 
     module = importlib.import_module("lenahs")
 
-    assert module.FlatZoneGraph.__module__ == "lenahs.hierarchy.types"
-    assert module.ParentTree.__module__ == "lenahs.hierarchy.types"
+    assert module.FlatZoneGraph.__module__ == "lenahs.component_tree.types"
+    assert module.ComponentTree.__module__ == "lenahs.component_tree.types"

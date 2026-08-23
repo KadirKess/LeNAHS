@@ -5,6 +5,9 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "higra>=0.6.13",
+    "matplotlib>=3.11.0",
+    "scikit-image>=0.26.0",
     "torch>=2.13.0",
     "torchvision>=0.28.0",
 ]

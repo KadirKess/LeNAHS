@@ -1,1 +1,1 @@
-# LeNAHS - Learning Noise-Aware Hierarchical Structure
+# LeNAHS - Learning Noise-Aware Hierarchical Structures

@@ -1,5 +1,3 @@
-"""Small records shared by component-tree construction and conversion."""
-
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -23,7 +21,5 @@ class FlatZoneGraph:
 
 @dataclass
 class ComponentTree:
-    """One-parent-per-flat-zone encoding of a max-tree or min-tree."""
-
     kind: ComponentTreeKind
     parents: NDArray[np.integer]

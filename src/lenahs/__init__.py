@@ -5,6 +5,7 @@ from lenahs.component_tree import (
     ComponentTreeKind,
     FlatZoneGraph,
     build_reference_rag,
+    choose_representative,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "ComponentTreeKind",
     "FlatZoneGraph",
     "build_reference_rag",
+    "choose_representative",
 ]

@@ -1,4 +1,4 @@
-"""Readable component-tree construction with an immersion-style union-find sweep.
+"""Component-tree construction with an immersion-style union-find sweep.
 
 The sweep follows Carlinet and Geraud, "A Comparative Review of Component Tree
 Computation Algorithms," IEEE TIP, 2014. Equal-level RAG nodes are processed
@@ -14,9 +14,12 @@ from lenahs.component_tree.types import ComponentTree, ComponentTreeKind, FlatZo
 
 def _find_root(disjoint_set_parents: np.ndarray, node: int) -> int:
     root = node
+
+    # Find the root of the disjoint set containing the node
     while disjoint_set_parents[root] != root:
         root = int(disjoint_set_parents[root])
 
+    # Path compression: make all nodes on the path point directly to the root
     while disjoint_set_parents[node] != node:
         parent = int(disjoint_set_parents[node])
         disjoint_set_parents[node] = root
@@ -36,9 +39,11 @@ def _join_components(
     if left_root == right_root:
         return left_root
 
+    # Union by rank: attach the smaller tree to the root of the larger tree (faster find)
     if ranks[left_root] < ranks[right_root]:
         left_root, right_root = right_root, left_root
 
+    # Make the right root point to the left root, effectively merging the two trees
     disjoint_set_parents[right_root] = left_root
     if ranks[left_root] == ranks[right_root]:
         ranks[left_root] += 1
@@ -76,8 +81,12 @@ def build_reference_component_tree(
         levels = levels[::-1]
 
     for level in levels:
+
+        # Batch equal-level nodes so their processing order cannot affect the result
         current_nodes = np.flatnonzero(graph.levels == level)
         previous_roots = set()
+
+        # Snapshot adjacent active components before the current level can merge them
         for node in current_nodes:
             for neighbor in adjacency[int(node)]:
                 if active[neighbor]:
@@ -86,11 +95,13 @@ def build_reference_component_tree(
             root: int(component_representatives[root]) for root in previous_roots
         }
 
+        # Activate current nodes as provisional singleton components
         for node in current_nodes:
             node = int(node)
             active[node] = True
             component_representatives[node] = node
 
+        # Merge the current level into the active threshold components
         for node in current_nodes:
             node = int(node)
             for neighbor in adjacency[node]:
@@ -102,18 +113,21 @@ def build_reference_component_tree(
                         neighbor,
                     )
 
+        # Group current-level candidates by the threshold component containing them
         current_nodes_by_root: dict[int, list[int]] = {}
         for node in current_nodes:
             node = int(node)
             root = _find_root(disjoint_set_parents, node)
             current_nodes_by_root.setdefault(root, []).append(node)
 
+        # Map each prior representative to the new component that absorbed it
         absorbed_representatives: dict[int, list[int]] = {}
         for old_root, representative in previous_representatives.items():
             new_root = _find_root(disjoint_set_parents, old_root)
             if new_root in current_nodes_by_root:
                 absorbed_representatives.setdefault(new_root, []).append(representative)
 
+        # Choose the new representatives and attach their candidates and child components
         for root, nodes in current_nodes_by_root.items():
             candidates = np.asarray(nodes, dtype=np.int64)
             representative = choose_representative(
@@ -127,6 +141,7 @@ def build_reference_component_tree(
                 tree_parents[child] = representative
             component_representatives[root] = representative
 
+    # Make each surviving outer-component representative a self-parented root
     final_roots = {
         _find_root(disjoint_set_parents, int(node)) for node in np.flatnonzero(active)
     }

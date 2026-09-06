@@ -82,12 +82,19 @@ def test_degenerate_shapes_match_reference_rag(image):
     _assert_same_graph(graph, build_reference_rag(image))
 
 
-def test_non_contiguous_image_matches_reference_rag():
+@pytest.mark.parametrize(
+    "column_slice",
+    [
+        pytest.param(slice(None, None, 2), id="positive_stride"),
+        pytest.param(slice(None, None, -1), id="negative_stride"),
+    ],
+)
+def test_non_contiguous_image_matches_reference_rag(column_slice):
     source = np.array(
         [[1, 8, 1, 8, 2], [1, 8, 3, 8, 2], [4, 8, 3, 8, 2]],
         dtype=np.uint8,
     )
-    image = source[:, ::2]
+    image = source[:, column_slice]
     assert not image.flags.c_contiguous
 
     graph, _ = build_higra_rag(image)

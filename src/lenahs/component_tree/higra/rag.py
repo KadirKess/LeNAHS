@@ -85,6 +85,9 @@ def build_higra_rag(image: np.ndarray) -> tuple[FlatZoneGraph, HigraRagContext]:
 
     _check_image(image)
 
+    # Higra's compiled RAG routine rejects negative-stride NumPy views
+    image = np.ascontiguousarray(image)
+
     # Build the four-connected pixel graph and align image values with its vertices
     pixel_graph = hg.get_4_adjacency_graph(image.shape)
     pixel_levels = hg.linearize_vertex_weights(image, pixel_graph)

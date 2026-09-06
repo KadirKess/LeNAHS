@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from lenahs.component_tree import build_reference_rag
-from lenahs.component_tree.higra import build_higra_rag, _remap_higra_regions
+from lenahs.component_tree.higra_rag import build_higra_rag, _remap_higra_regions
 
 from .cases import CASES
 

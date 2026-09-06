@@ -1,4 +1,4 @@
-"""Higra construction and identifier remapping at the component-tree boundary."""
+"""Higra flat-zone RAG construction and identifier remapping."""
 
 from dataclasses import dataclass
 

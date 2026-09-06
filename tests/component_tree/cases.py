@@ -1,6 +1,5 @@
 import numpy as np
 
-
 CASES = {
     "single_pixel": {
         "image": np.array([[7]], dtype=np.uint8),

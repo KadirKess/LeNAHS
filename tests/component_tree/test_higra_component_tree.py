@@ -17,7 +17,6 @@ from lenahs.component_tree.higra_rag import HigraRagContext, build_higra_rag
 
 from .cases import CASES
 
-
 CONVERTERS = [
     pytest.param(higra_to_component_tree, id="readable"),
     pytest.param(higra_to_component_tree_vectorized, id="vectorized"),

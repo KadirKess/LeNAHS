@@ -54,7 +54,9 @@ def test_public_imports_do_not_require_deferred_frameworks(monkeypatch):
 
     def guarded_import(name, *args, **kwargs):
         if name.split(".", 1)[0] in forbidden:
-            raise AssertionError(f"public component-tree import attempted to load {name}")
+            raise AssertionError(
+                f"public component-tree import attempted to load {name}"
+            )
         return original_import(name, *args, **kwargs)
 
     for module_name in list(sys.modules):

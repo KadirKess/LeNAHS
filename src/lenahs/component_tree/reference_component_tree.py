@@ -81,7 +81,6 @@ def build_reference_component_tree(
         levels = levels[::-1]
 
     for level in levels:
-
         # Batch equal-level nodes so their processing order cannot affect the result
         current_nodes = np.flatnonzero(graph.levels == level)
         previous_roots = set()

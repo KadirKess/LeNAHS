@@ -52,8 +52,7 @@ def _build_flat_zones(
                     neighbor_row = current_row + row_offset
                     neighbor_column = current_column + column_offset
                     inside_image = (
-                        0 <= neighbor_row < height
-                        and 0 <= neighbor_column < width
+                        0 <= neighbor_row < height and 0 <= neighbor_column < width
                     )
                     if not inside_image:
                         continue

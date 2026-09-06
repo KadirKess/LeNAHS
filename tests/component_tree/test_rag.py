@@ -116,7 +116,9 @@ def test_every_label_is_used_and_describes_one_connected_level(case_name):
         zone_values = image[graph.label_map == zone]
         assert np.all(zone_values == graph.levels[zone])
         assert len(pixels) == graph.pixel_counts[zone]
-        assert min(row * width + column for row, column in pixels) == graph.anchors[zone]
+        assert (
+            min(row * width + column for row, column in pixels) == graph.anchors[zone]
+        )
 
 
 @pytest.mark.parametrize("case_name", CASES)
@@ -136,9 +138,7 @@ def test_edges_are_exactly_the_cross_zone_pixel_boundaries(case_name):
             ):
                 neighbor_row = row + row_offset
                 neighbor_column = column + column_offset
-                if not (
-                    0 <= neighbor_row < height and 0 <= neighbor_column < width
-                ):
+                if not (0 <= neighbor_row < height and 0 <= neighbor_column < width):
                     continue
                 neighbor_zone = int(label_map[neighbor_row, neighbor_column])
                 if zone != neighbor_zone:

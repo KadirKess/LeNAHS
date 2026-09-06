@@ -9,17 +9,18 @@ from lenahs.component_tree import (
     build_reference_component_tree,
     build_reference_rag,
 )
-from lenahs.component_tree.higra_component_tree import higra_to_component_tree
-from lenahs.component_tree.higra_component_tree_vectorized import (
-    higra_to_component_tree_vectorized,
+from lenahs.component_tree.higra import (
+    HigraRagContext,
+    build_higra_rag,
+    higra_to_nahs,
+    higra_to_nahs_vectorized,
 )
-from lenahs.component_tree.higra_rag import HigraRagContext, build_higra_rag
 
 from .cases import CASES
 
 CONVERTERS = [
-    pytest.param(higra_to_component_tree, id="readable"),
-    pytest.param(higra_to_component_tree_vectorized, id="vectorized"),
+    pytest.param(higra_to_nahs, id="readable"),
+    pytest.param(higra_to_nahs_vectorized, id="vectorized"),
 ]
 
 

@@ -1,14 +1,14 @@
-"""Conversion between Higra and NAHS component-tree representations."""
+"""Readable conversion from Higra components to NAHS parents."""
 
 import higra as hg
 import numpy as np
 
 from lenahs.component_tree.canonical import choose_representative
-from lenahs.component_tree.higra_rag import HigraRagContext
+from lenahs.component_tree.higra.rag import HigraRagContext
 from lenahs.component_tree.types import ComponentTree, ComponentTreeKind, FlatZoneGraph
 
 
-def higra_to_component_tree(
+def higra_to_nahs(
     graph: FlatZoneGraph,
     higra_tree: hg.Tree,
     context: HigraRagContext,

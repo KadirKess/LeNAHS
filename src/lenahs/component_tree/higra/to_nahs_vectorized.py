@@ -1,10 +1,10 @@
-"""Bulk Higra-to-NAHS conversion prototype kept outside the active code path."""
+"""Bulk Higra-to-NAHS conversion for production generation."""
 
 import higra as hg
 import numpy as np
 from numpy.typing import NDArray
 
-from lenahs.component_tree.higra_rag import HigraRagContext
+from lenahs.component_tree.higra.rag import HigraRagContext
 from lenahs.component_tree.types import ComponentTree, ComponentTreeKind, FlatZoneGraph
 
 
@@ -51,13 +51,13 @@ def _choose_component_representatives(
     return representatives
 
 
-def higra_to_component_tree_vectorized(
+def higra_to_nahs_vectorized(
     graph: FlatZoneGraph,
     higra_tree: hg.Tree,
     context: HigraRagContext,
     kind: ComponentTreeKind,
 ) -> ComponentTree:
-    """Prototype the Higra-to-NAHS conversion with grouped array operations."""
+    """Convert Higra components to NAHS parents with grouped array operations."""
 
     kind = ComponentTreeKind(kind)
     leaf_count = graph.levels.size

@@ -77,9 +77,8 @@ def build_generation_sample(
     if corrupted_image is None:
         corruption_targets = derive_corruption_targets(
             clean_image,
-            clean_image,
-            clean_graph.label_map,
-            clean_graph.label_map,
+            clean_graph,
+            clean_graph,
         )
         return GenerationSample(
             clean=clean,
@@ -95,9 +94,8 @@ def build_generation_sample(
     )
     corruption_targets = derive_corruption_targets(
         clean_image,
-        corrupted_image,
-        clean_graph.label_map,
-        corrupted_graph.label_map,
+        clean_graph,
+        corrupted_graph,
     )
     return GenerationSample(
         clean=clean,

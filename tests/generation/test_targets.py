@@ -1,14 +1,31 @@
 import numpy as np
 import pytest
 
+from lenahs.component_tree import FlatZoneGraph
 from lenahs.generation import NoiseDirection, derive_corruption_targets
+
+
+def _graph(image: np.ndarray, label_map: np.ndarray) -> FlatZoneGraph:
+    label_map = np.asarray(label_map, dtype=np.int64)
+    node_count = int(label_map.max()) + 1
+    flat_labels = label_map.ravel()
+    anchors = np.full(node_count, image.size, dtype=np.int64)
+    np.minimum.at(anchors, flat_labels, np.arange(image.size, dtype=np.int64))
+    return FlatZoneGraph(
+        label_map=label_map,
+        edge_index=np.empty((0, 2), dtype=np.int64),
+        levels=image.ravel()[anchors],
+        pixel_counts=np.bincount(flat_labels, minlength=node_count),
+        anchors=anchors,
+    )
 
 
 def test_clean_identity_has_unchanged_targets() -> None:
     image = np.array([[10, 10, 30], [10, 20, 30]], dtype=np.uint8)
     label_map = np.array([[0, 0, 2], [0, 1, 2]], dtype=np.int64)
 
-    targets = derive_corruption_targets(image, image, label_map, label_map)
+    graph = _graph(image, label_map)
+    targets = derive_corruption_targets(image, graph, graph)
 
     np.testing.assert_array_equal(targets.noise_direction, [0, 0, 0])
     np.testing.assert_array_equal(targets.overlap_purity, [1.0, 1.0, 1.0])
@@ -39,12 +56,12 @@ def test_direction_compares_observed_level_with_unrounded_pixel_mean(
     clean_image = np.array([clean_values], dtype=np.uint8)
     corrupted_image = np.full_like(clean_image, observed)
 
-    targets = derive_corruption_targets(
-        clean_image,
+    clean_graph = _graph(clean_image, np.array([clean_labels], dtype=np.int64))
+    corrupted_graph = _graph(
         corrupted_image,
-        np.array([clean_labels], dtype=np.int64),
         np.zeros_like(clean_image, dtype=np.int64),
     )
+    targets = derive_corruption_targets(clean_image, clean_graph, corrupted_graph)
 
     np.testing.assert_array_equal(targets.noise_direction, [direction])
     np.testing.assert_allclose(targets.overlap_purity, [purity])
@@ -58,7 +75,9 @@ def test_mixed_equality_is_unchanged_among_changed_and_unchanged_zones() -> None
     corrupted_labels = np.array([[0, 1, 1, 2], [0, 1, 1, 2]], dtype=np.int64)
 
     targets = derive_corruption_targets(
-        clean_image, corrupted_image, clean_labels, corrupted_labels
+        clean_image,
+        _graph(clean_image, clean_labels),
+        _graph(corrupted_image, corrupted_labels),
     )
 
     np.testing.assert_array_equal(targets.noise_direction, [1, 0, 0])
@@ -78,11 +97,12 @@ def test_targets_follow_observed_ids_independently_of_clean_ids(
     clean_permutation = np.array([2, 0, 1]) if permute_clean else np.arange(3)
     observed_permutation = np.array([1, 2, 0]) if permute_observed else np.arange(3)
 
+    permuted_clean_labels = clean_permutation[clean_labels]
+    permuted_corrupted_labels = observed_permutation[corrupted_labels]
     targets = derive_corruption_targets(
         clean_image,
-        corrupted_image,
-        clean_permutation[clean_labels],
-        observed_permutation[corrupted_labels],
+        _graph(clean_image, permuted_clean_labels),
+        _graph(corrupted_image, permuted_corrupted_labels),
     )
 
     # The three observed zones have clean means of 40, 80, and 90.
@@ -95,29 +115,3 @@ def test_targets_follow_observed_ids_independently_of_clean_ids(
     np.testing.assert_array_equal(
         targets.overlap_clean_zone_count[observed_permutation], [2, 1, 2]
     )
-
-
-def test_target_derivation_rejects_non_flat_observed_zone() -> None:
-    clean_image = np.array([[10, 10]], dtype=np.uint8)
-    corrupted_image = np.array([[10, 11]], dtype=np.uint8)
-    label_map = np.array([[0, 0]], dtype=np.int64)
-
-    with pytest.raises(ValueError, match="does not describe flat zones"):
-        derive_corruption_targets(clean_image, corrupted_image, label_map, label_map)
-
-
-@pytest.mark.parametrize(
-    "invalid_map, error",
-    [([[-1, 0]], ValueError), ([[0, 2]], ValueError), ([[0.0, 0.0]], TypeError)],
-)
-@pytest.mark.parametrize("invalid_side", ["clean", "observed"])
-def test_target_derivation_rejects_invalid_label_ids(
-    invalid_map, error, invalid_side
-) -> None:
-    image = np.array([[10, 10]], dtype=np.uint8)
-    valid_map = np.array([[0, 0]], dtype=np.int64)
-    clean_labels = np.array(invalid_map) if invalid_side == "clean" else valid_map
-    observed_labels = np.array(invalid_map) if invalid_side == "observed" else valid_map
-
-    with pytest.raises(error):
-        derive_corruption_targets(image, image, clean_labels, observed_labels)

@@ -4,6 +4,8 @@ from enum import IntEnum
 import numpy as np
 from numpy.typing import NDArray
 
+from lenahs.component_tree.types import FlatZoneGraph
+
 
 class NoiseDirection(IntEnum):
     """Class indices for comparison with the mean clean intensity."""
@@ -20,102 +22,52 @@ class CorruptionTargets:
     overlap_clean_zone_count: NDArray[np.integer]
 
 
-def _validate_image(name: str, image: NDArray[np.uint8]) -> None:
-    if not isinstance(image, np.ndarray):
-        raise TypeError(f"{name} must be a NumPy array.")
-    if image.ndim != 2:
-        raise ValueError(f"{name} must be two-dimensional.")
-    if image.dtype != np.uint8:
-        raise TypeError(f"{name} must have dtype uint8.")
-    if image.size == 0:
-        raise ValueError(f"{name} must not be empty.")
-
-
-def _validate_label_map(name: str, label_map: NDArray[np.integer]) -> int:
-    if not isinstance(label_map, np.ndarray):
-        raise TypeError(f"{name} must be a NumPy array.")
-    if label_map.ndim != 2:
-        raise ValueError(f"{name} must be two-dimensional.")
-    if not np.issubdtype(label_map.dtype, np.integer):
-        raise TypeError(f"{name} must have an integer dtype.")
-    if label_map.size == 0 or np.min(label_map) < 0:
-        raise ValueError(f"{name} must contain nonnegative labels.")
-
-    labels = np.unique(label_map)
-    expected = np.arange(labels.size, dtype=labels.dtype)
-    if not np.array_equal(labels, expected):
-        raise ValueError(f"{name} labels must be contiguous and start at zero.")
-    return int(labels.size)
-
-
-def _validate_flat_zones(
-    name: str,
-    image: NDArray[np.uint8],
-    label_map: NDArray[np.integer],
-    zone_count: int,
-) -> None:
-    for zone in range(zone_count):
-        levels = image[label_map == zone]
-        if np.any(levels != levels[0]):
-            raise ValueError(f"{name} does not describe flat zones in its image.")
-
-
 def derive_corruption_targets(
     clean_image: NDArray[np.uint8],
-    corrupted_image: NDArray[np.uint8],
-    clean_label_map: NDArray[np.integer],
-    corrupted_label_map: NDArray[np.integer],
+    clean_graph: FlatZoneGraph,
+    corrupted_graph: FlatZoneGraph,
 ) -> CorruptionTargets:
     """Compare observed levels with mean clean levels, including mixed zones."""
 
-    _validate_image("clean_image", clean_image)
-    _validate_image("corrupted_image", corrupted_image)
-    if clean_image.shape != corrupted_image.shape:
-        raise ValueError("clean_image and corrupted_image must have the same shape.")
-    if clean_label_map.shape != clean_image.shape:
-        raise ValueError("clean_label_map must have the same shape as clean_image.")
-    if corrupted_label_map.shape != corrupted_image.shape:
-        raise ValueError(
-            "corrupted_label_map must have the same shape as corrupted_image."
-        )
+    clean_labels = clean_graph.label_map.ravel()
+    corrupted_labels = corrupted_graph.label_map.ravel()
+    corrupted_zone_count = corrupted_graph.levels.size
 
-    clean_zone_count = _validate_label_map("clean_label_map", clean_label_map)
-    corrupted_zone_count = _validate_label_map(
-        "corrupted_label_map", corrupted_label_map
+    zone_pixel_counts = np.bincount(
+        corrupted_labels,
+        minlength=corrupted_zone_count,
+    ).astype(np.int64, copy=False)
+    clean_sums = np.zeros(corrupted_zone_count, dtype=np.int64)
+    np.add.at(
+        clean_sums,
+        corrupted_labels,
+        clean_image.ravel().astype(np.int64, copy=False),
     )
-    _validate_flat_zones(
-        "clean_label_map", clean_image, clean_label_map, clean_zone_count
+    observed_sums = (
+        corrupted_graph.levels.astype(np.int64, copy=False) * zone_pixel_counts
     )
-    _validate_flat_zones(
-        "corrupted_label_map",
-        corrupted_image,
-        corrupted_label_map,
+
+    noise_direction = np.full(
         corrupted_zone_count,
+        NoiseDirection.UNCHANGED,
+        dtype=np.int64,
     )
+    noise_direction[observed_sums > clean_sums] = NoiseDirection.BRIGHTENED
+    noise_direction[observed_sums < clean_sums] = NoiseDirection.DARKENED
 
-    noise_direction = np.empty(corrupted_zone_count, dtype=np.int64)
-    overlap_purity = np.empty(corrupted_zone_count, dtype=np.float64)
-    overlap_clean_zone_count = np.empty(corrupted_zone_count, dtype=np.int64)
-
-    for observed_zone in range(corrupted_zone_count):
-        pixels = corrupted_label_map == observed_zone
-        clean_zones, counts = np.unique(clean_label_map[pixels], return_counts=True)
-        clean_values = clean_image[pixels]
-        observed_level = corrupted_image[pixels][0]
-
-        # Comparing sums preserves fractional means and exact equality.
-        # Python integers avoid overflow in both the sum and the product.
-        clean_sum = sum(map(int, clean_values))
-        observed_sum = int(observed_level) * clean_values.size
-        if observed_sum > clean_sum:
-            noise_direction[observed_zone] = NoiseDirection.BRIGHTENED
-        elif observed_sum < clean_sum:
-            noise_direction[observed_zone] = NoiseDirection.DARKENED
-        else:
-            noise_direction[observed_zone] = NoiseDirection.UNCHANGED
-
-        overlap_purity[observed_zone] = float(np.max(counts) / np.sum(counts))
-        overlap_clean_zone_count[observed_zone] = clean_zones.size
+    zone_pairs, pair_counts = np.unique(
+        np.column_stack((corrupted_labels, clean_labels)),
+        axis=0,
+        return_counts=True,
+    )
+    pair_corrupted_zones = zone_pairs[:, 0]
+    overlap_clean_zone_count = np.bincount(
+        pair_corrupted_zones,
+        minlength=corrupted_zone_count,
+    ).astype(np.int64, copy=False)
+    largest_overlap = np.zeros(corrupted_zone_count, dtype=np.int64)
+    np.maximum.at(largest_overlap, pair_corrupted_zones, pair_counts)
+    overlap_purity = largest_overlap / zone_pixel_counts
 
     return CorruptionTargets(
         noise_direction=noise_direction,

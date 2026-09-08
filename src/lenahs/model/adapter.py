@@ -1,3 +1,5 @@
+"""Translate generated samples into model-facing PyG graphs."""
+
 import numpy as np
 import torch
 from torch_geometric.data import Data

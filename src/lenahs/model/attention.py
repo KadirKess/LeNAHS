@@ -1,3 +1,5 @@
+"""Exact graph-local parent attention calculations."""
+
 from dataclasses import dataclass
 from math import sqrt
 

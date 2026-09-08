@@ -5,28 +5,35 @@ from lenahs.model.adapter import (
     ModelData,
     adapt_generation_sample,
 )
+from lenahs.model.architecture import RGNNConfig, build_rgnn
 from lenahs.model.attention import ParentAttentionOutput, readable_graph_attention
-from lenahs.model.network import (
-    AllNodeParentHead,
-    BaselineModelConfig,
-    NodeEncoder,
-    RecurrentParentModel,
-    RecurrentRagProcessor,
-    RecurrentStepOutput,
-    build_baseline_model,
+from lenahs.model.direction import (
+    DirectionGradientMode,
+    DirectionHeadInput,
+    DirectionHeadKind,
+    NodeOnlyDirectionHead,
+    ParentContextDirectionHead,
 )
+from lenahs.model.network import RGNN, RGNNStep
+from lenahs.model.parent import AllNodeParentHead
+from lenahs.model.recurrent import NodeEncoder, RecurrentRagProcessor
 
 __all__ = [
     "AllNodeParentHead",
-    "BaselineModelConfig",
+    "DirectionGradientMode",
+    "DirectionHeadInput",
+    "DirectionHeadKind",
     "STATIC_FEATURE_NAMES",
     "ModelData",
     "NodeEncoder",
+    "NodeOnlyDirectionHead",
     "ParentAttentionOutput",
-    "RecurrentParentModel",
+    "ParentContextDirectionHead",
     "RecurrentRagProcessor",
-    "RecurrentStepOutput",
+    "RGNN",
+    "RGNNConfig",
+    "RGNNStep",
     "adapt_generation_sample",
-    "build_baseline_model",
+    "build_rgnn",
     "readable_graph_attention",
 ]

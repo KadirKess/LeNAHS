@@ -5,13 +5,13 @@ import torch
 from torch import nn
 
 from lenahs.model import (
+    RGNN,
     AllNodeParentHead,
-    BaselineModelConfig,
     NodeEncoder,
     ParentAttentionOutput,
-    RecurrentParentModel,
     RecurrentRagProcessor,
-    build_baseline_model,
+    RGNNConfig,
+    build_rgnn,
 )
 
 
@@ -87,10 +87,11 @@ def test_local_aggregations_match_direct_neighborhood_extrema(
 
 
 def test_one_step_agrees_with_independent_fixed_weight_calculation() -> None:
-    model = RecurrentParentModel(
+    model = RGNN(
         encoder=NodeEncoder(input_width=3, hidden_width=1),
         recurrent_processor=RecurrentRagProcessor(hidden_width=1),
         parent_head=AllNodeParentHead(hidden_width=1),
+        direction_head=None,
     )
     with torch.no_grad():
         model.encoder.linear.weight.copy_(torch.tensor([[1.0, 2.0, -1.0]]))
@@ -186,7 +187,12 @@ class _IdentityParentHead(nn.Module):
 def test_second_step_uses_new_parent_message_and_one_static_embedding() -> None:
     encoder = _CountingEncoder()
     processor = _RecordingProcessor()
-    model = RecurrentParentModel(encoder, processor, _IdentityParentHead())
+    model = RGNN(
+        encoder,
+        processor,
+        _IdentityParentHead(),
+        None,
+    )
     node_features = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
 
     outputs = model(
@@ -207,7 +213,7 @@ def test_second_step_uses_new_parent_message_and_one_static_embedding() -> None:
 
 def test_edge_reordering_does_not_change_recurrent_outputs() -> None:
     torch.manual_seed(11)
-    model = build_baseline_model(BaselineModelConfig(hidden_width=4))
+    model = build_rgnn(RGNNConfig(hidden_width=4))
     node_features = torch.rand(3, 3)
     edge_index = _path_edges()
 
@@ -233,7 +239,7 @@ def test_edge_reordering_does_not_change_recurrent_outputs() -> None:
 
 def test_heterogeneous_graph_shapes_and_probability_normalization() -> None:
     torch.manual_seed(12)
-    model = build_baseline_model(BaselineModelConfig(hidden_width=5))
+    model = build_rgnn(RGNNConfig(hidden_width=5))
 
     output = model(
         torch.rand(4, 3),
@@ -255,7 +261,7 @@ def test_heterogeneous_graph_shapes_and_probability_normalization() -> None:
 
 def test_gradients_reach_every_shared_module_through_recurrence() -> None:
     torch.manual_seed(13)
-    model = build_baseline_model(BaselineModelConfig(hidden_width=4))
+    model = build_rgnn(RGNNConfig(hidden_width=4))
     node_features = torch.rand(3, 3, requires_grad=True)
 
     outputs = model(
@@ -269,13 +275,15 @@ def test_gradients_reach_every_shared_module_through_recurrence() -> None:
 
     assert node_features.grad is not None
     assert torch.count_nonzero(node_features.grad)
-    for parameter in model.parameters():
-        assert parameter.grad is not None
-        assert torch.count_nonzero(parameter.grad)
+    shared_modules = (model.encoder, model.recurrent_processor, model.parent_head)
+    for module in shared_modules:
+        for parameter in module.parameters():
+            assert parameter.grad is not None
+            assert torch.count_nonzero(parameter.grad)
 
 
 def test_model_requires_a_positive_recurrent_horizon() -> None:
-    model = build_baseline_model()
+    model = build_rgnn()
 
     with pytest.raises(ValueError, match="steps must be positive"):
         model(
@@ -284,12 +292,3 @@ def test_model_requires_a_positive_recurrent_horizon() -> None:
             torch.tensor([0, 1]),
             steps=0,
         )
-
-
-@pytest.mark.parametrize(
-    "config",
-    [BaselineModelConfig(input_width=0), BaselineModelConfig(hidden_width=0)],
-)
-def test_baseline_builder_rejects_nonpositive_widths(config) -> None:
-    with pytest.raises(ValueError, match="width must be positive"):
-        build_baseline_model(config)

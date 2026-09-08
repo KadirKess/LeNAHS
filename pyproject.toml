@@ -9,6 +9,7 @@ dependencies = [
     "matplotlib>=3.11.0",
     "scikit-image>=0.26.0",
     "torch>=2.13.0",
+    "torch-geometric>=2.8.0.post1",
     "torchvision>=0.28.0",
 ]
 

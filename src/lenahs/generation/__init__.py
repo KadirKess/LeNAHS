@@ -7,6 +7,7 @@ from lenahs.generation.noise import (
     SpeckleNoise,
     corrupt_image,
 )
+from lenahs.generation.seeds import GenerationStage, derive_rng
 from lenahs.generation.targets import (
     CorruptionTargets,
     NoiseDirection,
@@ -16,6 +17,7 @@ from lenahs.generation.targets import (
 __all__ = [
     "AdditiveGaussianNoise",
     "CorruptionTargets",
+    "GenerationStage",
     "NoiseConfig",
     "NoiseDirection",
     "PoissonNoise",
@@ -23,6 +25,7 @@ __all__ = [
     "SpeckleNoise",
     "SquareImageConfig",
     "corrupt_image",
+    "derive_rng",
     "derive_corruption_targets",
     "generate_square_image",
 ]

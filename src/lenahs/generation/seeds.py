@@ -26,15 +26,20 @@ def derive_rng(
     base_seed: int,
     sample_index: int,
     stage: GenerationStage,
+    *,
+    realization_index: int = 0,
 ) -> np.random.Generator:
     """Derive one sample-stage stream independently of generation order."""
 
     _validate_nonnegative_integer("base_seed", base_seed)
     _validate_nonnegative_integer("sample_index", sample_index)
+    _validate_nonnegative_integer("realization_index", realization_index)
     if not isinstance(stage, GenerationStage):
         raise TypeError("stage must be a GenerationStage.")
 
-    seed_sequence = np.random.SeedSequence(
-        [int(base_seed), int(sample_index), stage.value]
-    )
+    identity = [int(base_seed), int(sample_index), stage.value]
+    if realization_index != 0:
+        identity.append(int(realization_index))
+
+    seed_sequence = np.random.SeedSequence(identity)
     return np.random.Generator(np.random.PCG64(seed_sequence))

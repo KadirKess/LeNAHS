@@ -152,6 +152,36 @@ def test_named_stages_have_distinct_streams() -> None:
     assert len(draws) == len(GenerationStage)
 
 
+def test_realization_indices_have_distinct_streams() -> None:
+    draws = {
+        derive_rng(
+            5,
+            11,
+            GenerationStage.ADDITIVE_GAUSSIAN_NOISE,
+            realization_index=index,
+        ).bytes(32)
+        for index in range(4)
+    }
+
+    assert len(draws) == 4
+
+
+def test_zero_realization_preserves_the_original_stream_identity() -> None:
+    original = derive_rng(
+        5,
+        11,
+        GenerationStage.ADDITIVE_GAUSSIAN_NOISE,
+    ).bytes(32)
+    explicit = derive_rng(
+        5,
+        11,
+        GenerationStage.ADDITIVE_GAUSSIAN_NOISE,
+        realization_index=0,
+    ).bytes(32)
+
+    assert explicit == original
+
+
 def test_consuming_one_stage_does_not_advance_another() -> None:
     expected = derive_rng(17, 3, GenerationStage.POISSON_NOISE).bytes(32)
 
@@ -175,7 +205,7 @@ def test_global_random_state_does_not_influence_derived_stream() -> None:
     assert first == second
 
 
-@pytest.mark.parametrize("name", ["base_seed", "sample_index"])
+@pytest.mark.parametrize("name", ["base_seed", "sample_index", "realization_index"])
 @pytest.mark.parametrize(
     "value, error",
     [(-1, ValueError), (1.5, TypeError), (True, TypeError)],
@@ -189,6 +219,7 @@ def test_invalid_sample_identity_fails(
         "base_seed": 1,
         "sample_index": 2,
         "stage": GenerationStage.SQUARE_IMAGE,
+        "realization_index": 0,
     }
     arguments[name] = value
 

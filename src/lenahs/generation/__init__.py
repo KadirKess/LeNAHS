@@ -15,13 +15,20 @@ from lenahs.generation.samples import (
 )
 from lenahs.generation.seeds import GenerationStage, derive_rng
 from lenahs.generation.targets import (
+    CorrectionAction,
+    CorrectionDiagnostics,
+    CorrectionTargets,
     CorruptionTargets,
     NoiseDirection,
+    derive_correction_targets,
     derive_corruption_targets,
 )
 
 __all__ = [
     "AdditiveGaussianNoise",
+    "CorrectionAction",
+    "CorrectionDiagnostics",
+    "CorrectionTargets",
     "CorruptionTargets",
     "GenerationStage",
     "GenerationSample",
@@ -35,6 +42,7 @@ __all__ = [
     "TreeImage",
     "build_generation_sample",
     "corrupt_image",
+    "derive_correction_targets",
     "derive_rng",
     "derive_corruption_targets",
     "generate_square_image",

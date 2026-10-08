@@ -4,7 +4,11 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from lenahs.component_tree.types import ComponentTreeKind
-from lenahs.dataset.records import SCHEMA_VERSION, DatasetManifest
+from lenahs.dataset.records import (
+    CORRECTION_TARGET_POLICY,
+    SCHEMA_VERSION,
+    DatasetManifest,
+)
 from lenahs.dataset.validation import validate_nonnegative_integer
 
 
@@ -16,6 +20,7 @@ def save_dataset_manifest(path: str | Path, manifest: DatasetManifest) -> None:
 
     content = {
         "schema_version": SCHEMA_VERSION,
+        "correction_target_policy": manifest.correction_target_policy,
         "base_seed": manifest.base_seed,
         "component_tree_kind": manifest.component_tree_kind.value,
         "connectivity": manifest.connectivity,
@@ -32,6 +37,11 @@ def load_dataset_manifest(path: str | Path) -> DatasetManifest:
     source = Path(path)
     content = json.loads(source.read_text())
     version = content.get("schema_version")
+    if version == 1:
+        raise ValueError(
+            "Schema 1 datasets require regeneration into a new schema-2 root "
+            "or a separately reviewed offline conversion."
+        )
     if version != SCHEMA_VERSION:
         raise ValueError(
             f"Unsupported schema version {version!r} in {source}; "
@@ -39,6 +49,7 @@ def load_dataset_manifest(path: str | Path) -> DatasetManifest:
         )
 
     manifest = DatasetManifest(
+        correction_target_policy=content["correction_target_policy"],
         base_seed=content["base_seed"],
         component_tree_kind=ComponentTreeKind(content["component_tree_kind"]),
         connectivity=content["connectivity"],
@@ -51,6 +62,10 @@ def load_dataset_manifest(path: str | Path) -> DatasetManifest:
 
 
 def _validate_manifest(manifest: DatasetManifest) -> None:
+    if manifest.correction_target_policy != CORRECTION_TARGET_POLICY:
+        raise ValueError(
+            f"Unknown correction target policy: {manifest.correction_target_policy!r}."
+        )
     validate_nonnegative_integer("base_seed", manifest.base_seed)
     if not isinstance(manifest.component_tree_kind, ComponentTreeKind):
         raise TypeError("component_tree_kind must be a ComponentTreeKind.")

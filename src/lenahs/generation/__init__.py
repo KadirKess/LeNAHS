@@ -18,10 +18,7 @@ from lenahs.generation.targets import (
     CorrectionAction,
     CorrectionDiagnostics,
     CorrectionTargets,
-    CorruptionTargets,
-    NoiseDirection,
     derive_correction_targets,
-    derive_corruption_targets,
 )
 
 __all__ = [
@@ -29,11 +26,9 @@ __all__ = [
     "CorrectionAction",
     "CorrectionDiagnostics",
     "CorrectionTargets",
-    "CorruptionTargets",
     "GenerationStage",
     "GenerationSample",
     "NoiseConfig",
-    "NoiseDirection",
     "PoissonNoise",
     "SaltAndPepperNoise",
     "SpeckleNoise",
@@ -44,6 +39,5 @@ __all__ = [
     "corrupt_image",
     "derive_correction_targets",
     "derive_rng",
-    "derive_corruption_targets",
     "generate_square_image",
 ]

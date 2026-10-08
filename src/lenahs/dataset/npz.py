@@ -22,7 +22,7 @@ from lenahs.generation.noise import (
     SpeckleNoise,
 )
 from lenahs.generation.samples import GenerationSample, TreeImage
-from lenahs.generation.targets import CorruptionTargets
+from lenahs.generation.targets import CorrectionDiagnostics, CorrectionTargets
 
 _NOISE_CONFIG_TYPES = {
     "salt_and_pepper": SaltAndPepperNoise,
@@ -61,15 +61,22 @@ def save_sample_family(path: str | Path, family: SampleFamily) -> None:
         ),
     }
     _store_tree_image(arrays, "clean", family.clean.clean)
-    _store_targets(arrays, "clean.targets", family.clean.corruption_targets)
+    _store_targets(arrays, "clean.targets", family.clean.correction_targets)
+    _store_diagnostics(arrays, "clean.diagnostics", family.clean.correction_diagnostics)
 
     for position, observation in enumerate(family.noisy):
         prefix = f"noisy.{position}"
-        _store_tree_image(arrays, prefix, observation.sample.corrupted)
+        _store_tree_image(arrays, prefix, observation.sample.observed)
         _store_targets(
             arrays,
             f"{prefix}.targets",
-            observation.sample.corruption_targets,
+            observation.sample.correction_targets,
+        )
+
+        _store_diagnostics(
+            arrays,
+            f"{prefix}.diagnostics",
+            observation.sample.correction_diagnostics,
         )
 
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -93,6 +100,11 @@ def load_sample_family(path: str | Path) -> SampleFamily:
     source = Path(path)
     with np.load(source, allow_pickle=False) as arrays:
         version = int(arrays["schema_version"])
+        if version == 1:
+            raise ValueError(
+                "Schema 1 families require regeneration into a new schema-2 root "
+                "or a separately reviewed offline conversion."
+            )
         if version != SCHEMA_VERSION:
             raise ValueError(
                 f"Unsupported schema version {version!r} in {source}; "
@@ -109,8 +121,9 @@ def load_sample_family(path: str | Path) -> SampleFamily:
         clean_targets = _load_targets(arrays, "clean.targets")
         clean_sample = GenerationSample(
             clean=clean_image,
-            corrupted=None,
-            corruption_targets=clean_targets,
+            observed=clean_image,
+            correction_targets=clean_targets,
+            correction_diagnostics=_load_diagnostics(arrays, "clean.diagnostics"),
         )
 
         observations = []
@@ -118,7 +131,7 @@ def load_sample_family(path: str | Path) -> SampleFamily:
             zip(realization_indices, noise_configs, strict=True)
         ):
             prefix = f"noisy.{position}"
-            corrupted = _load_tree_image(arrays, prefix)
+            observed = _load_tree_image(arrays, prefix)
             targets = _load_targets(arrays, f"{prefix}.targets")
             observations.append(
                 NoisyObservation(
@@ -126,8 +139,11 @@ def load_sample_family(path: str | Path) -> SampleFamily:
                     noise_config=_decode_noise_config(str(encoded_config)),
                     sample=GenerationSample(
                         clean=clean_image,
-                        corrupted=corrupted,
-                        corruption_targets=targets,
+                        observed=observed,
+                        correction_targets=targets,
+                        correction_diagnostics=_load_diagnostics(
+                            arrays, f"{prefix}.diagnostics"
+                        ),
                     ),
                 )
             )
@@ -144,11 +160,8 @@ def load_sample_family(path: str | Path) -> SampleFamily:
 def _store_tree_image(
     arrays: dict[str, np.ndarray],
     prefix: str,
-    tree_image: TreeImage | None,
+    tree_image: TreeImage,
 ) -> None:
-    if tree_image is None:
-        raise ValueError(f"{prefix} must contain a tree image.")
-
     arrays[f"{prefix}.image"] = tree_image.image
     arrays[f"{prefix}.graph.label_map"] = tree_image.graph.label_map
     arrays[f"{prefix}.graph.edge_index"] = tree_image.graph.edge_index
@@ -183,19 +196,54 @@ def _load_tree_image(arrays: Any, prefix: str) -> TreeImage:
 def _store_targets(
     arrays: dict[str, np.ndarray],
     prefix: str,
-    targets: CorruptionTargets,
+    targets: CorrectionTargets,
 ) -> None:
-    arrays[f"{prefix}.noise_direction"] = targets.noise_direction
-    arrays[f"{prefix}.overlap_purity"] = targets.overlap_purity
-    arrays[f"{prefix}.overlap_clean_zone_count"] = targets.overlap_clean_zone_count
+    arrays[f"{prefix}.corrective_parents"] = targets.corrective_parents
+    arrays[f"{prefix}.actions"] = targets.actions
 
 
-def _load_targets(arrays: Any, prefix: str) -> CorruptionTargets:
-    return CorruptionTargets(
-        noise_direction=arrays[f"{prefix}.noise_direction"].copy(),
-        overlap_purity=arrays[f"{prefix}.overlap_purity"].copy(),
-        overlap_clean_zone_count=arrays[f"{prefix}.overlap_clean_zone_count"].copy(),
+def _load_targets(arrays: Any, prefix: str) -> CorrectionTargets:
+    return CorrectionTargets(
+        corrective_parents=arrays[f"{prefix}.corrective_parents"].copy(),
+        actions=arrays[f"{prefix}.actions"].copy(),
     )
+
+
+def _store_diagnostics(
+    arrays: dict[str, np.ndarray],
+    prefix: str,
+    diagnostics: CorrectionDiagnostics,
+) -> None:
+    arrays[f"{prefix}.overlap_clean_zone_count"] = diagnostics.overlap_clean_zone_count
+    arrays[f"{prefix}.overlap_purity"] = diagnostics.overlap_purity
+    arrays[f"{prefix}.missing_clean_zones"] = diagnostics.missing_clean_zones
+    arrays[f"{prefix}.clean_root_missing"] = np.asarray(
+        diagnostics.clean_root_missing, dtype=np.bool_
+    )
+    arrays[f"{prefix}.artificial_root_attachment_count"] = np.asarray(
+        diagnostics.artificial_root_attachment_count, dtype=np.int64
+    )
+
+
+def _load_diagnostics(arrays: Any, prefix: str) -> CorrectionDiagnostics:
+    return CorrectionDiagnostics(
+        overlap_clean_zone_count=arrays[f"{prefix}.overlap_clean_zone_count"].copy(),
+        overlap_purity=arrays[f"{prefix}.overlap_purity"].copy(),
+        missing_clean_zones=arrays[f"{prefix}.missing_clean_zones"].copy(),
+        clean_root_missing=_load_scalar(
+            arrays, f"{prefix}.clean_root_missing", np.bool_
+        ),
+        artificial_root_attachment_count=_load_scalar(
+            arrays, f"{prefix}.artificial_root_attachment_count", np.int64
+        ),
+    )
+
+
+def _load_scalar(arrays: Any, key: str, dtype: type) -> bool | int:
+    value = arrays[key]
+    if value.shape != () or value.dtype != dtype:
+        raise ValueError(f"{key} must be a scalar with dtype {np.dtype(dtype)}.")
+    return value.item()
 
 
 def _encode_noise_config(config: NoiseConfig) -> str:

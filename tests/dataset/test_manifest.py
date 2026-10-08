@@ -75,3 +75,31 @@ def test_manifest_rejects_invalid_dataset_metadata(
 
     with pytest.raises(error):
         save_dataset_manifest(tmp_path / "manifest.json", manifest)
+
+
+def test_manifest_records_the_selected_correction_policy(tmp_path) -> None:
+    manifest = DatasetManifest(
+        base_seed=1,
+        component_tree_kind=ComponentTreeKind.MAX_TREE,
+        image_source="external",
+        image_config={},
+        split_sample_counts={"train": 1},
+    )
+    path = tmp_path / "manifest.json"
+    save_dataset_manifest(path, manifest)
+    content = json.loads(path.read_text())
+    assert content["schema_version"] == 2
+    assert content["correction_target_policy"] == "pixel_count_representative_v1"
+    content["correction_target_policy"] = "unknown"
+    path.write_text(json.dumps(content))
+    with pytest.raises(ValueError, match="Unknown correction target policy"):
+        load_dataset_manifest(path)
+
+
+def test_schema_one_manifest_requires_a_separate_root(tmp_path) -> None:
+    path = tmp_path / "manifest.json"
+    original = json.dumps({"schema_version": 1})
+    path.write_text(original)
+    with pytest.raises(ValueError, match="Schema 1.*regeneration.*new schema-2 root"):
+        load_dataset_manifest(path)
+    assert path.read_text() == original

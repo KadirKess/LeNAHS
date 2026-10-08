@@ -10,7 +10,6 @@ from lenahs.component_tree import (
     build_reference_rag,
 )
 from lenahs.generation import (
-    NoiseDirection,
     SaltAndPepperNoise,
     build_generation_sample,
 )
@@ -21,27 +20,31 @@ def _build_reference_tree(image, kind):
     return graph, build_reference_component_tree(graph, kind)
 
 
-def test_clean_sample_contains_requested_tree_and_unchanged_targets() -> None:
-    clean_image = np.array([[10, 10, 30], [10, 20, 30]], dtype=np.uint8)
+@pytest.mark.parametrize(
+    ("kind", "parents", "actions"),
+    [
+        (ComponentTreeKind.MAX_TREE, [0, 2, 0], [1, 2, 2]),
+        (ComponentTreeKind.MIN_TREE, [2, 1, 1], [2, 1, 2]),
+    ],
+)
+def test_clean_observation_has_real_correction_targets(kind, parents, actions) -> None:
+    image = np.array([[10, 10, 30], [10, 20, 30]], dtype=np.uint8)
+    sample = build_generation_sample(image, kind, tree_builder=_build_reference_tree)
 
-    sample = build_generation_sample(
-        clean_image,
-        ComponentTreeKind.MAX_TREE,
-        tree_builder=_build_reference_tree,
-    )
-
-    assert sample.clean.image is clean_image
-    assert sample.clean.component_tree.kind == ComponentTreeKind.MAX_TREE
-    assert sample.corrupted is None
+    assert sample.clean.image is image
+    assert sample.observed is sample.clean
+    assert sample.clean.component_tree.kind == kind
+    np.testing.assert_array_equal(sample.correction_targets.corrective_parents, parents)
+    np.testing.assert_array_equal(sample.correction_targets.actions, actions)
+    np.testing.assert_array_equal(sample.correction_diagnostics.overlap_purity, 1.0)
     np.testing.assert_array_equal(
-        sample.corruption_targets.noise_direction,
-        NoiseDirection.UNCHANGED,
+        sample.correction_diagnostics.overlap_clean_zone_count, 1
     )
-    np.testing.assert_array_equal(sample.corruption_targets.overlap_purity, 1.0)
     np.testing.assert_array_equal(
-        sample.corruption_targets.overlap_clean_zone_count,
-        1,
+        sample.correction_diagnostics.missing_clean_zones, False
     )
+    assert sample.correction_diagnostics.clean_root_missing is False
+    assert sample.correction_diagnostics.artificial_root_attachment_count == 0
 
 
 @pytest.mark.parametrize("kind", list(ComponentTreeKind))
@@ -57,54 +60,45 @@ def test_corrupted_sample_keeps_clean_and_observed_representations(kind) -> None
     )
 
     assert sample.clean.image is clean_image
-    assert sample.corrupted is not None
-    assert sample.corrupted.image is not clean_image
-    np.testing.assert_array_equal(sample.corrupted.image, 255)
+    assert sample.observed is not None
+    assert sample.observed.image is not clean_image
+    np.testing.assert_array_equal(sample.observed.image, 255)
     np.testing.assert_array_equal(clean_image, [[10, 10, 30], [10, 20, 30]])
     assert sample.clean.component_tree.kind == kind
-    assert sample.corrupted.component_tree.kind == kind
+    assert sample.observed.component_tree.kind == kind
     np.testing.assert_array_equal(
-        sample.corruption_targets.noise_direction,
-        [NoiseDirection.BRIGHTENED],
+        sample.correction_targets.corrective_parents,
+        [0],
     )
-    np.testing.assert_allclose(sample.corruption_targets.overlap_purity, [0.5])
+    np.testing.assert_allclose(sample.correction_diagnostics.overlap_purity, [0.5])
     np.testing.assert_array_equal(
-        sample.corruption_targets.overlap_clean_zone_count,
+        sample.correction_diagnostics.overlap_clean_zone_count,
         [3],
     )
 
 
-def test_direction_targets_do_not_depend_on_tree_kind() -> None:
-    clean_image = np.array([[10, 10, 30], [10, 20, 30]], dtype=np.uint8)
-    config = SaltAndPepperNoise(probability=1.0, salt_fraction=1.0)
-
-    max_sample = build_generation_sample(
-        clean_image,
-        ComponentTreeKind.MAX_TREE,
-        config,
-        np.random.default_rng(4),
-        tree_builder=_build_reference_tree,
-    )
-    min_sample = build_generation_sample(
-        clean_image,
-        ComponentTreeKind.MIN_TREE,
-        config,
-        np.random.default_rng(4),
-        tree_builder=_build_reference_tree,
-    )
-
-    np.testing.assert_array_equal(
-        max_sample.corruption_targets.noise_direction,
-        min_sample.corruption_targets.noise_direction,
-    )
-    np.testing.assert_array_equal(
-        max_sample.corruption_targets.overlap_purity,
-        min_sample.corruption_targets.overlap_purity,
-    )
-    np.testing.assert_array_equal(
-        max_sample.corruption_targets.overlap_clean_zone_count,
-        min_sample.corruption_targets.overlap_clean_zone_count,
-    )
+def test_missing_clean_root_diagnostic_depends_on_requested_tree_kind() -> None:
+    image = np.array([[10, 10, 30], [10, 20, 30]], dtype=np.uint8)
+    samples = [
+        build_generation_sample(
+            image,
+            kind,
+            SaltAndPepperNoise(probability=1.0, salt_fraction=1.0),
+            np.random.default_rng(4),
+            tree_builder=_build_reference_tree,
+        )
+        for kind in ComponentTreeKind
+    ]
+    # The only observed zone selects level 10 by pixel count. It is the max-tree
+    # root, whereas the min-tree root at level 30 has no representative.
+    assert samples[0].correction_diagnostics.clean_root_missing is False
+    assert samples[1].correction_diagnostics.clean_root_missing is True
+    for sample in samples:
+        np.testing.assert_array_equal(sample.correction_targets.corrective_parents, [0])
+        np.testing.assert_array_equal(sample.correction_targets.actions, [1])
+        np.testing.assert_array_equal(
+            sample.correction_diagnostics.missing_clean_zones, [False, True, True]
+        )
 
 
 def test_tree_builder_receives_each_image_with_only_the_requested_kind() -> None:
@@ -123,10 +117,10 @@ def test_tree_builder_receives_each_image_with_only_the_requested_kind() -> None
         tree_builder=recording_builder,
     )
 
-    assert sample.corrupted is not None
+    assert sample.observed is not None
     assert calls == [
         (sample.clean.image, ComponentTreeKind.MIN_TREE),
-        (sample.corrupted.image, ComponentTreeKind.MIN_TREE),
+        (sample.observed.image, ComponentTreeKind.MIN_TREE),
     ]
 
 
@@ -241,3 +235,26 @@ def test_default_builder_matches_reference_component_tree(kind) -> None:
         sample.clean.component_tree.parents,
         reference_tree.parents,
     )
+
+
+@pytest.mark.parametrize("noisy", [False, True])
+def test_sample_derives_correction_supervision_once(monkeypatch, noisy) -> None:
+    image = np.array([[10, 10, 20]], dtype=np.uint8)
+    derive = sample_module.derive_correction_targets
+    calls = []
+
+    def record_targets(clean_graph, clean_tree, observed_graph):
+        calls.append((clean_graph, clean_tree, observed_graph))
+        return derive(clean_graph, clean_tree, observed_graph)
+
+    monkeypatch.setattr(sample_module, "derive_correction_targets", record_targets)
+    sample = build_generation_sample(
+        image,
+        ComponentTreeKind.MAX_TREE,
+        SaltAndPepperNoise(probability=0.5) if noisy else None,
+        np.random.default_rng(10) if noisy else None,
+    )
+    assert len(calls) == 1
+    assert calls[0][0] is sample.clean.graph
+    assert calls[0][1] is sample.clean.component_tree
+    assert calls[0][2] is sample.observed.graph

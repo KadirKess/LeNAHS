@@ -91,7 +91,6 @@ def test_one_step_agrees_with_independent_fixed_weight_calculation() -> None:
         encoder=NodeEncoder(input_width=3, hidden_width=1),
         recurrent_processor=RecurrentRagProcessor(hidden_width=1),
         parent_head=AllNodeParentHead(hidden_width=1),
-        direction_head=None,
     )
     with torch.no_grad():
         model.encoder.linear.weight.copy_(torch.tensor([[1.0, 2.0, -1.0]]))
@@ -191,7 +190,6 @@ def test_second_step_uses_new_parent_message_and_one_static_embedding() -> None:
         encoder,
         processor,
         _IdentityParentHead(),
-        None,
     )
     node_features = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
 
@@ -292,3 +290,111 @@ def test_model_requires_a_positive_recurrent_horizon() -> None:
             torch.tensor([0, 1]),
             steps=0,
         )
+
+
+@pytest.mark.parametrize("steps", [-1, 0, True, 1.5, "2"])
+def test_invalid_horizon_fails_before_encoding(steps) -> None:
+    encoder = _CountingEncoder()
+    model = RGNN(encoder, _RecordingProcessor(), _IdentityParentHead())
+    error = ValueError if type(steps) is int else TypeError
+    with pytest.raises(error, match="steps must be"):
+        model(torch.ones(1, 2), torch.tensor([[0], [0]]), torch.tensor([0, 1]), steps)
+    assert encoder.calls == 0
+
+
+def test_three_steps_and_gradients_match_independent_gru_equations() -> None:
+    model = build_rgnn(RGNNConfig(hidden_width=2)).double()
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.copy_(
+                torch.linspace(
+                    -0.2, 0.3, parameter.numel(), dtype=torch.float64
+                ).reshape(parameter.shape)
+            )
+    features = torch.tensor(
+        [[0.1, 0.4, 0.0], [0.8, 0.2, 0.4], [0.3, 0.4, 0.7], [0.5, 1.0, 0.0]],
+        dtype=torch.float64,
+        requires_grad=True,
+    )
+    edges = torch.tensor([[0, 1, 1, 2, 0, 1, 2, 3], [1, 0, 2, 1, 0, 1, 2, 3]])
+    actual = model(features, edges, torch.tensor([0, 3, 4]), steps=3)
+    encoder = model.encoder.linear
+    embedding = torch.relu(features @ encoder.weight.T + encoder.bias)
+    hidden = torch.zeros_like(embedding)
+    message = torch.zeros_like(embedding)
+    expected = []
+    gru = model.recurrent_processor.gru
+    for _ in range(3):
+        maxima = []
+        minima = []
+        for node in range(4):
+            neighbors = [
+                int(source)
+                for source, destination in edges.T
+                if int(destination) == node
+            ]
+            values = torch.stack([hidden[neighbor] for neighbor in neighbors])
+            maxima.append(values.max(dim=0).values)
+            minima.append(values.min(dim=0).values)
+        inputs = torch.cat(
+            (message, torch.stack(maxima), torch.stack(minima), embedding), dim=1
+        )
+        input_reset, input_update, input_candidate = (
+            inputs @ gru.weight_ih.T + gru.bias_ih
+        ).chunk(3, dim=1)
+        hidden_reset, hidden_update, hidden_candidate = (
+            hidden @ gru.weight_hh.T + gru.bias_hh
+        ).chunk(3, dim=1)
+        reset = torch.sigmoid(input_reset + hidden_reset)
+        update = torch.sigmoid(input_update + hidden_update)
+        candidate = torch.tanh(input_candidate + reset * hidden_candidate)
+        hidden = (1 - update) * candidate + update * hidden
+        query_layer = model.parent_head.query_projection
+        key_layer = model.parent_head.key_projection
+        query = hidden @ query_layer.weight.T + query_layer.bias
+        key = hidden @ key_layer.weight.T + key_layer.bias
+        scores = tuple(
+            query[start:stop] @ key[start:stop].T / sqrt(2)
+            for start, stop in [(0, 3), (3, 4)]
+        )
+        probabilities = tuple(torch.softmax(score, dim=1) for score in scores)
+        message = torch.cat(
+            [
+                probability @ hidden[start:stop]
+                for probability, (start, stop) in zip(
+                    probabilities, [(0, 3), (3, 4)], strict=True
+                )
+            ]
+        )
+        expected.append((hidden, scores, probabilities, message))
+
+    for actual_step, (hidden, scores, probabilities, message) in zip(
+        actual, expected, strict=True
+    ):
+        torch.testing.assert_close(actual_step.hidden_state, hidden)
+        torch.testing.assert_close(actual_step.parent_message, message)
+        for actual_scores, expected_scores in zip(
+            actual_step.parent_scores, scores, strict=True
+        ):
+            torch.testing.assert_close(actual_scores, expected_scores)
+        for actual_probabilities, expected_probabilities in zip(
+            actual_step.parent_probabilities, probabilities, strict=True
+        ):
+            torch.testing.assert_close(actual_probabilities, expected_probabilities)
+
+    actual_loss = (
+        sum(score.square().sum() for score in actual[-1].parent_scores)
+        + actual[-1].parent_message.square().sum()
+    )
+    expected_loss = (
+        sum(score.square().sum() for score in expected[-1][1])
+        + expected[-1][3].square().sum()
+    )
+    inputs = (features, *model.parameters())
+    actual_gradients = torch.autograd.grad(actual_loss, inputs, retain_graph=True)
+    expected_gradients = torch.autograd.grad(expected_loss, inputs)
+    for actual_gradient, expected_gradient in zip(
+        actual_gradients, expected_gradients, strict=True
+    ):
+        assert torch.isfinite(actual_gradient).all()
+        torch.testing.assert_close(actual_gradient, expected_gradient)

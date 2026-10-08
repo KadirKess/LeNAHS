@@ -5,7 +5,8 @@ from lenahs.component_tree.types import ComponentTreeKind
 from lenahs.generation.noise import NoiseConfig
 from lenahs.generation.samples import GenerationSample
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+CORRECTION_TARGET_POLICY = "pixel_count_representative_v1"
 
 
 @dataclass(frozen=True)
@@ -16,6 +17,7 @@ class DatasetManifest:
     image_config: dict[str, Any]
     split_sample_counts: dict[str, int]
     connectivity: int = 4
+    correction_target_policy: str = CORRECTION_TARGET_POLICY
 
 
 @dataclass(frozen=True)

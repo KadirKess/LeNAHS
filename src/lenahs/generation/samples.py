@@ -8,7 +8,11 @@ from numpy.typing import NDArray
 from lenahs.component_tree.higra import build_higra_rag, higra_to_nahs_vectorized
 from lenahs.component_tree.types import ComponentTree, ComponentTreeKind, FlatZoneGraph
 from lenahs.generation.noise import NoiseConfig, corrupt_image
-from lenahs.generation.targets import CorruptionTargets, derive_corruption_targets
+from lenahs.generation.targets import (
+    CorrectionDiagnostics,
+    CorrectionTargets,
+    derive_correction_targets,
+)
 
 
 @dataclass
@@ -21,8 +25,9 @@ class TreeImage:
 @dataclass
 class GenerationSample:
     clean: TreeImage
-    corrupted: TreeImage | None
-    corruption_targets: CorruptionTargets
+    observed: TreeImage
+    correction_targets: CorrectionTargets
+    correction_diagnostics: CorrectionDiagnostics
 
 
 type TreeBuilder = Callable[
@@ -55,7 +60,7 @@ def build_generation_sample(
     *,
     tree_builder: TreeBuilder = _build_production_tree,
 ) -> GenerationSample:
-    """Build clean and optional corrupted component-tree representations."""
+    """Build the clean reference, observed input and correction supervision."""
 
     kind = ComponentTreeKind(kind)
     if noise_config is None and noise_rng is not None:
@@ -75,30 +80,21 @@ def build_generation_sample(
     )
 
     if corrupted_image is None:
-        corruption_targets = derive_corruption_targets(
-            clean_image,
-            clean_graph,
-            clean_graph,
-        )
-        return GenerationSample(
-            clean=clean,
-            corrupted=None,
-            corruption_targets=corruption_targets,
+        observed = clean
+    else:
+        observed_graph, observed_tree = tree_builder(corrupted_image, kind)
+        observed = TreeImage(
+            image=corrupted_image,
+            graph=observed_graph,
+            component_tree=observed_tree,
         )
 
-    corrupted_graph, corrupted_component_tree = tree_builder(corrupted_image, kind)
-    corrupted = TreeImage(
-        image=corrupted_image,
-        graph=corrupted_graph,
-        component_tree=corrupted_component_tree,
-    )
-    corruption_targets = derive_corruption_targets(
-        clean_image,
-        clean_graph,
-        corrupted_graph,
+    targets, diagnostics = derive_correction_targets(
+        clean.graph, clean.component_tree, observed.graph
     )
     return GenerationSample(
         clean=clean,
-        corrupted=corrupted,
-        corruption_targets=corruption_targets,
+        observed=observed,
+        correction_targets=targets,
+        correction_diagnostics=diagnostics,
     )

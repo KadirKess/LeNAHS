@@ -18,7 +18,7 @@ class ModelData(Data):
     """PyG data for one observed flat-zone graph and its targets."""
 
     def __inc__(self, key, value, *args, **kwargs):
-        if key == "parents":
+        if key in {"observed_parents", "corrective_parents"}:
             return 0
         return super().__inc__(key, value, *args, **kwargs)
 
@@ -34,7 +34,7 @@ def adapt_generation_sample(
     if not dtype.is_floating_point:
         raise TypeError("Model node features require a floating-point dtype.")
 
-    observed = sample.corrupted if sample.corrupted is not None else sample.clean
+    observed = sample.observed
     node_count = observed.graph.levels.size
     image_pixel_count = observed.graph.label_map.size
     target_device = torch.device(device) if device is not None else torch.device("cpu")
@@ -57,13 +57,18 @@ def adapt_generation_sample(
     return ModelData(
         x=torch.as_tensor(node_features, dtype=dtype, device=target_device),
         edge_index=edge_index,
-        parents=torch.as_tensor(
+        observed_parents=torch.as_tensor(
             observed.component_tree.parents.astype(np.int64, copy=False),
             dtype=torch.int64,
             device=target_device,
         ),
-        noise_direction=torch.as_tensor(
-            sample.corruption_targets.noise_direction.astype(np.int64, copy=False),
+        corrective_parents=torch.as_tensor(
+            sample.correction_targets.corrective_parents,
+            dtype=torch.int64,
+            device=target_device,
+        ),
+        correction_actions=torch.as_tensor(
+            sample.correction_targets.actions,
             dtype=torch.int64,
             device=target_device,
         ),

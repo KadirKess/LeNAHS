@@ -14,6 +14,7 @@ IMAGE_QUANTITIES = (
     "observed_parent_accuracy",
     "corrective_parent_accuracy",
     "action_accuracy",
+    "joint_correction_accuracy",
     "copy_observed_baseline",
     "always_merge_baseline",
 )
@@ -60,6 +61,8 @@ def batch_image_metrics(
         corrective.corrective_query, corrective.corrective_key, data.ptr
     )
     action_predictions = corrective.action_logits.argmax(dim=1)
+    corrective_correct = corrective_predictions == data.corrective_parents
+    action_correct = action_predictions == data.correction_actions
 
     def per_image(correct: Tensor) -> Tensor:
         return image_accuracy(correct, data.batch, graph_count)
@@ -73,10 +76,10 @@ def batch_image_metrics(
         "observed_parent_accuracy": per_image(
             observed_predictions == data.observed_parents
         ),
-        "corrective_parent_accuracy": per_image(
-            corrective_predictions == data.corrective_parents
-        ),
-        "action_accuracy": per_image(action_predictions == data.correction_actions),
+        "corrective_parent_accuracy": per_image(corrective_correct),
+        "action_accuracy": per_image(action_correct),
+        # A node decodes correctly only when both its pointer and action are right
+        "joint_correction_accuracy": per_image(corrective_correct & action_correct),
         "copy_observed_baseline": per_image(
             data.observed_parents == data.corrective_parents
         ),

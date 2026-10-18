@@ -24,7 +24,7 @@ from lenahs.training.records import (
 )
 
 # The checkpoint uses the same image weighting as the loss
-SELECTION_METRIC = "all/corrective_parent_accuracy/image_mean"
+SELECTION_METRIC = "all/joint_correction_accuracy/image_mean"
 
 
 @dataclass(frozen=True)
@@ -103,6 +103,7 @@ def fit(
             run_directory / "settings.json",
             {
                 "settings": settings.to_dict(),
+                "selection_metric": SELECTION_METRIC,
                 "git": git_revision(),
                 "torch": torch.__version__,
                 "device": str(device),
@@ -158,7 +159,7 @@ def fit(
         remaining_hours = mean_seconds * (settings.max_epochs - epoch - 1) / 3600
         print(
             f"epoch {epoch}  train loss {sum(train.values()):.4f}  "
-            f"val corrective {score:.4f}  best {best:.4f}  "
+            f"val selection {score:.4f}  best {best:.4f}  "
             f"lr {optimizer.param_groups[0]['lr']:.1e}  "
             f"{history[-1]['seconds']:.0f}s  at most {remaining_hours:.1f}h left",
             flush=True,

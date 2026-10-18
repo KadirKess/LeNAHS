@@ -27,6 +27,7 @@ def _metric_batch(values, node_counts, clean):
         "observed_parent_accuracy",
         "corrective_parent_accuracy",
         "action_accuracy",
+        "joint_correction_accuracy",
         "copy_observed_baseline",
         "always_merge_baseline",
     )
@@ -62,6 +63,34 @@ def test_clean_only_summary_has_no_noisy_group() -> None:
 
     assert "clean/action_accuracy/image_mean" in summary
     assert not any(name.startswith("noisy/") for name in summary)
+
+
+def test_joint_accuracy_needs_parent_and_action_right_on_the_same_node() -> None:
+    # Node 0 has both right, node 1 only its parent, node 2 only its action
+    hidden = torch.eye(3)
+    step = SimpleNamespace(
+        parent_query=hidden,
+        parent_key=hidden,
+        corrective_query=hidden,
+        corrective_key=hidden,
+        action_logits=torch.tensor([[1.0, 0, 0], [1.0, 0, 0], [0, 1.0, 0]]),
+    )
+    output = SimpleNamespace(observed_steps=(step,), correction_steps=(step,))
+    data = SimpleNamespace(
+        num_graphs=1,
+        ptr=torch.tensor([0, 3]),
+        batch=torch.zeros(3, dtype=torch.long),
+        observed_parents=torch.tensor([0, 1, 2]),
+        corrective_parents=torch.tensor([0, 1, 0]),
+        correction_actions=torch.tensor([0, 2, 1]),
+        is_clean=torch.tensor([False]),
+    )
+
+    metrics = batch_image_metrics(output, data)
+
+    assert metrics["corrective_parent_accuracy"].item() == pytest.approx(2 / 3)
+    assert metrics["action_accuracy"].item() == pytest.approx(2 / 3)
+    assert metrics["joint_correction_accuracy"].item() == pytest.approx(1 / 3)
 
 
 def test_baselines_on_a_clean_observation() -> None:

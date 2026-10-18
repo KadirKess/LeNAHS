@@ -5,6 +5,8 @@ from dataclasses import asdict
 from functools import partial
 from pathlib import Path
 
+from tqdm import tqdm
+
 from lenahs.component_tree.types import ComponentTreeKind
 from lenahs.dataset.records import DatasetManifest, NoisyObservation, SampleFamily
 from lenahs.dataset.store import NpzDataset
@@ -97,13 +99,16 @@ def generate_dataset(
         noise_config,
         realization_count,
     )
+    progress = tqdm(total=len(jobs), desc="families", mininterval=5)
     if workers == 1:
         for job in jobs:
             write(job)
+            progress.update()
     else:
         with ProcessPoolExecutor(workers) as pool:
             for _ in pool.map(write, jobs, chunksize=32):
-                pass
+                progress.update()
+    progress.close()
     return dataset
 
 

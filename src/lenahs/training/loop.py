@@ -17,6 +17,7 @@ from torch.nn.utils import clip_grad_norm_
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch_geometric.loader import DataLoader
+from tqdm import tqdm
 
 from lenahs.model.adapter import ModelData
 from lenahs.model.architecture import CorrectionRunConfig, build_correction_model
@@ -27,7 +28,8 @@ from lenahs.training.metrics import batch_image_metrics, summarize_image_metrics
 
 # The checkpoint uses the same image weighting as the loss
 SELECTION_METRIC = "all/corrective_parent_accuracy/image_mean"
-PROGRESS_INTERVAL = 200
+# Colab redraws subprocess output slowly, so refresh the bars at most every few seconds
+PROGRESS_SECONDS = 5
 
 
 @dataclass(frozen=True)
@@ -81,9 +83,8 @@ def train_epoch(
     model.train()
     totals = defaultdict(float)
     graph_count = 0
-    started = time.perf_counter()
-
-    for batch_index, data in enumerate(loader, start=1):
+    progress = tqdm(loader, desc="train", leave=False, mininterval=PROGRESS_SECONDS)
+    for data in progress:
         data = data.to(device)
         losses = correction_losses(_forward(model, data, settings), data)
 
@@ -97,13 +98,9 @@ def train_epoch(
             totals[name] += value * data.num_graphs
         graph_count += data.num_graphs
 
-        if batch_index % PROGRESS_INTERVAL == 0:
-            running = sum(totals.values()) / graph_count
-            seconds = time.perf_counter() - started
-            print(
-                f"  batch {batch_index}/{len(loader)}  loss {running:.4f}  {seconds:.0f}s",
-                flush=True,
-            )
+        progress.set_postfix(
+            loss=f"{sum(totals.values()) / graph_count:.4f}", refresh=False
+        )
 
     return {name: total / graph_count for name, total in totals.items()}
 
@@ -121,7 +118,9 @@ def evaluate(
     loss_totals = defaultdict(float)
     graph_count = 0
 
-    for data in loader:
+    for data in tqdm(
+        loader, desc="evaluate", leave=False, mininterval=PROGRESS_SECONDS
+    ):
         data = data.to(device)
         output = _forward(model, data, settings)
         for name, value in correction_losses(output, data).as_floats().items():
@@ -268,11 +267,14 @@ def fit(
             save_checkpoint(best_path, state)
         _write_json(run_directory / "history.json", history)
 
+        # Early stopping can end the run before this estimate
+        mean_seconds = sum(entry["seconds"] for entry in history) / len(history)
+        remaining_hours = mean_seconds * (settings.max_epochs - epoch - 1) / 3600
         print(
             f"epoch {epoch}  train loss {sum(train.values()):.4f}  "
             f"val corrective {score:.4f}  best {best:.4f}  "
             f"lr {optimizer.param_groups[0]['lr']:.1e}  "
-            f"{history[-1]['seconds']:.0f}s",
+            f"{history[-1]['seconds']:.0f}s  at most {remaining_hours:.1f}h left",
             flush=True,
         )
 

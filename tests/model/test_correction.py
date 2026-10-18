@@ -33,7 +33,19 @@ class _FixedObserved(nn.Module):
             self.hidden_state.new_zeros(int(stop - start), int(stop - start))
             for start, stop in zip(graph_ptr[:-1], graph_ptr[1:], strict=True)
         )
-        return (ObservedStep(self.hidden_state, blocks, blocks, self.parent_message),)
+        return (
+            ObservedStep(
+                self.hidden_state,
+                blocks,
+                blocks,
+                self.parent_message,
+                parent_query=self.hidden_state,
+                parent_key=self.hidden_state,
+                parent_log_normalizers=self.hidden_state.new_zeros(
+                    self.hidden_state.shape[0]
+                ),
+            ),
+        )
 
 
 def _fixed_readout():

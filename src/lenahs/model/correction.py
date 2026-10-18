@@ -17,6 +17,9 @@ class CorrectionStep:
     corrective_probabilities: tuple[Tensor, ...]
     expected_destination_state: Tensor
     action_logits: Tensor
+    corrective_query: Tensor
+    corrective_key: Tensor
+    corrective_log_normalizers: Tensor
 
 
 @dataclass(frozen=True)
@@ -97,6 +100,9 @@ class CorrectionModel(nn.Module):
             corrective_probabilities=destinations.probabilities,
             expected_destination_state=destinations.parent_message,
             action_logits=action_logits,
+            corrective_query=destinations.query,
+            corrective_key=destinations.key,
+            corrective_log_normalizers=destinations.log_normalizers,
         )
 
 

@@ -12,6 +12,9 @@ class ObservedStep:
     parent_scores: tuple[Tensor, ...]
     parent_probabilities: tuple[Tensor, ...]
     parent_message: Tensor
+    parent_query: Tensor
+    parent_key: Tensor
+    parent_log_normalizers: Tensor
 
 
 class RGNN(nn.Module):
@@ -70,6 +73,9 @@ class RGNN(nn.Module):
                     parent_scores=parent_output.scores,
                     parent_probabilities=parent_output.probabilities,
                     parent_message=parent_message,
+                    parent_query=parent_output.query,
+                    parent_key=parent_output.key,
+                    parent_log_normalizers=parent_output.log_normalizers,
                 )
             )
 

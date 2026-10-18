@@ -180,6 +180,9 @@ class _IdentityParentHead(nn.Module):
             scores=tuple(probabilities),
             probabilities=tuple(probabilities),
             parent_message=hidden_state,
+            key=hidden_state,
+            query=hidden_state,
+            log_normalizers=hidden_state.new_zeros(hidden_state.shape[0]),
         )
 
 

@@ -13,8 +13,8 @@ from lenahs.model import (
     adapt_generation_sample,
     build_correction_model,
 )
-from lenahs.training.loop import PreliminaryRunSettings, fit
 from lenahs.training.losses import correction_losses
+from lenahs.training.run import PreliminaryRunSettings, fit
 
 SMALL_IMAGES = SquareImageConfig(
     height=16, width=16, min_squares=2, max_squares=4, min_side=2, max_side=8

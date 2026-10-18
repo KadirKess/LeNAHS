@@ -1,35 +1,30 @@
-"""Training epochs, evaluation, checkpoints and run records."""
+"""A training run: its settings, epochs, checkpoint selection and test result."""
 
 import json
 import random
-import subprocess
 import time
-from collections import defaultdict
 from dataclasses import asdict, dataclass
 from math import inf
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import torch
-from torch import nn
-from torch.nn.utils import clip_grad_norm_
-from torch.optim import AdamW, Optimizer
+from torch.optim import AdamW
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch_geometric.loader import DataLoader
-from tqdm import tqdm
 
-from lenahs.model.adapter import ModelData
 from lenahs.model.architecture import CorrectionRunConfig, build_correction_model
-from lenahs.model.correction import CorrectionModelOutput
 from lenahs.training.data import ObservationDataset, make_loader
-from lenahs.training.losses import correction_losses
-from lenahs.training.metrics import batch_image_metrics, summarize_image_metrics
+from lenahs.training.epochs import evaluate, select_device, train_epoch
+from lenahs.training.records import (
+    git_revision,
+    load_checkpoint,
+    save_checkpoint,
+    write_json,
+)
 
 # The checkpoint uses the same image weighting as the loss
 SELECTION_METRIC = "all/corrective_parent_accuracy/image_mean"
-# Colab redraws subprocess output slowly, so refresh the bars at most every few seconds
-PROGRESS_SECONDS = 5
 
 
 @dataclass(frozen=True)
@@ -50,122 +45,6 @@ class PreliminaryRunSettings:
 
     def to_dict(self) -> dict[str, object]:
         return {**asdict(self), "run": self.run.to_dict()}
-
-
-def select_device() -> torch.device:
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
-
-
-def _forward(
-    model: nn.Module, data: ModelData, settings: PreliminaryRunSettings
-) -> CorrectionModelOutput:
-    return model(
-        data.x,
-        data.edge_index,
-        data.ptr,
-        settings.run.observed_steps,
-        settings.run.correction_steps,
-    )
-
-
-def train_epoch(
-    model: nn.Module,
-    loader: DataLoader,
-    optimizer: Optimizer,
-    settings: PreliminaryRunSettings,
-    device: torch.device,
-) -> dict[str, float]:
-    """Mean training losses over the epoch's images."""
-    model.train()
-    totals = defaultdict(float)
-    graph_count = 0
-    progress = tqdm(loader, desc="train", leave=False, mininterval=PROGRESS_SECONDS)
-    for data in progress:
-        data = data.to(device)
-        losses = correction_losses(_forward(model, data, settings), data)
-
-        optimizer.zero_grad()
-        losses.total().backward()
-        clip_grad_norm_(model.parameters(), settings.gradient_clip_norm)
-        optimizer.step()
-
-        # Weight each batch by its graphs, since the last batch can be smaller
-        for name, value in losses.as_floats().items():
-            totals[name] += value * data.num_graphs
-        graph_count += data.num_graphs
-
-        progress.set_postfix(
-            loss=f"{sum(totals.values()) / graph_count:.4f}", refresh=False
-        )
-
-    return {name: total / graph_count for name, total in totals.items()}
-
-
-@torch.no_grad()
-def evaluate(
-    model: nn.Module,
-    loader: DataLoader,
-    settings: PreliminaryRunSettings,
-    device: torch.device,
-) -> dict[str, float]:
-    """Split losses, accuracies, baselines and tie counts."""
-    model.eval()
-    per_image = defaultdict(list)
-    loss_totals = defaultdict(float)
-    graph_count = 0
-
-    for data in tqdm(
-        loader, desc="evaluate", leave=False, mininterval=PROGRESS_SECONDS
-    ):
-        data = data.to(device)
-        output = _forward(model, data, settings)
-        for name, value in correction_losses(output, data).as_floats().items():
-            loss_totals[name] += value * data.num_graphs
-        graph_count += data.num_graphs
-
-        # Keep per-image values on the CPU so a whole split never sits on the GPU
-        for name, value in batch_image_metrics(output, data).items():
-            per_image[name].append(value.cpu())
-
-    summary = summarize_image_metrics(per_image)
-    for name, total in loss_totals.items():
-        summary[f"loss/{name}"] = total / graph_count
-    return summary
-
-
-def save_checkpoint(path: Path, state: dict[str, Any]) -> None:
-    # Write then rename, so a disconnect never leaves a truncated checkpoint
-    temporary = path.with_suffix(".tmp")
-    torch.save(state, temporary)
-    temporary.replace(path)
-
-
-def load_checkpoint(path: Path, device: torch.device) -> dict[str, Any]:
-    return torch.load(path, map_location=device)
-
-
-def _write_json(path: Path, content: object) -> None:
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(content, indent=2))
-    temporary.replace(path)
-
-
-def _git_revision() -> str | None:
-    # A "-dirty" suffix records that uncommitted changes were part of the run
-    try:
-        return subprocess.run(
-            ["git", "describe", "--always", "--dirty"],
-            cwd=Path(__file__).resolve().parent,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return None
 
 
 def fit(
@@ -220,11 +99,11 @@ def fit(
         best, stale, history = state["best"], state["stale"], state["history"]
     else:
         manifest = Path(settings.dataset_root) / "manifest.json"
-        _write_json(
+        write_json(
             run_directory / "settings.json",
             {
                 "settings": settings.to_dict(),
-                "git": _git_revision(),
+                "git": git_revision(),
                 "torch": torch.__version__,
                 "device": str(device),
                 "dataset_manifest": json.loads(manifest.read_text()),
@@ -236,8 +115,15 @@ def fit(
             break
 
         started = time.perf_counter()
-        train = train_epoch(model, train_loader, optimizer, settings, device)
-        validation = evaluate(model, validation_loader, settings, device)
+        train = train_epoch(
+            model,
+            train_loader,
+            optimizer,
+            settings.run,
+            settings.gradient_clip_norm,
+            device,
+        )
+        validation = evaluate(model, validation_loader, settings.run, device)
         score = validation[SELECTION_METRIC]
         scheduler.step(score)
 
@@ -265,7 +151,7 @@ def fit(
         save_checkpoint(last_path, state)
         if improved:
             save_checkpoint(best_path, state)
-        _write_json(run_directory / "history.json", history)
+        write_json(run_directory / "history.json", history)
 
         # Early stopping can end the run before this estimate
         mean_seconds = sum(entry["seconds"] for entry in history) / len(history)
@@ -281,6 +167,6 @@ def fit(
     if not best_path.exists():
         raise RuntimeError("No epoch produced a finite validation score.")
     model.load_state_dict(load_checkpoint(best_path, device)["model"])
-    test = evaluate(model, loader("test", shuffle=False), settings, device)
-    _write_json(run_directory / "test.json", test)
+    test = evaluate(model, loader("test", shuffle=False), settings.run, device)
+    write_json(run_directory / "test.json", test)
     return test

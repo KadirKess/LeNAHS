@@ -6,3 +6,7 @@ tmp/
 # Python 
 __pycache__/
 *.egg-info/
+
+# Execution results
+/run
+/dataset

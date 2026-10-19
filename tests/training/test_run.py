@@ -14,7 +14,12 @@ from lenahs.model import (
     build_correction_model,
 )
 from lenahs.training.losses import correction_losses
-from lenahs.training.run import PreliminaryRunSettings, fit
+from lenahs.training.run import (
+    SELECTION_METRIC,
+    PreliminaryRunSettings,
+    epoch_report,
+    fit,
+)
 
 SMALL_IMAGES = SquareImageConfig(
     height=16, width=16, min_squares=2, max_squares=4, min_side=2, max_side=8
@@ -94,3 +99,62 @@ def test_fit_writes_run_records_and_resumes(dataset_root, tmp_path) -> None:
     assert json.loads((run / "test.json").read_text()) == test
     assert test["all/images"] == 3
     assert {"best.pt", "last.pt"} <= {path.name for path in run.iterdir()}
+
+
+def _history_entry(epoch, score, groups=("clean", "noisy")):
+    validation = {
+        "loss/observed_parent": 0.5,
+        "loss/corrective_parent": 0.25,
+        "loss/action": 0.125,
+        SELECTION_METRIC: score,
+    }
+    accuracies = {
+        "observed_parent_accuracy": 0.9,
+        "corrective_parent_accuracy": 0.8,
+        "action_accuracy": 0.7,
+        "joint_correction_accuracy": 0.6,
+    }
+    for group in groups:
+        validation[f"{group}/images"] = 1
+        for name, value in accuracies.items():
+            # Clean values differ from noisy ones so the rows can be told apart
+            offset = 0.05 if group == "clean" else 0.0
+            validation[f"{group}/{name}/image_mean"] = value + offset
+    return {
+        "epoch": epoch,
+        "seconds": 12.0,
+        "learning_rate": 1e-3,
+        "train": {"observed_parent": 1.0, "corrective_parent": 2.0, "action": 4.0},
+        "validation": validation,
+    }
+
+
+def _row(report, label):
+    line = next(line for line in report.splitlines() if line.startswith(f"  {label}"))
+    return [float(value) for value in line[len(label) + 2 :].split()]
+
+
+def test_epoch_report_separates_losses_and_groups() -> None:
+    history = [_history_entry(0, 0.4), _history_entry(1, 0.6), _history_entry(2, 0.5)]
+    report = epoch_report(history, stale=1, patience=10)
+
+    assert report.splitlines()[0] == "epoch 2  lr 1.0e-03  12s"
+    assert _row(report, "train (epoch mean)") == [1.0, 2.0, 4.0, 7.0]
+    assert _row(report, "val ") == [0.5, 0.25, 0.125, 0.875]
+    assert _row(report, "val clean") == [0.95, 0.85, 0.75, 0.65]
+    assert _row(report, "val noisy") == [0.9, 0.8, 0.7, 0.6]
+    # Epoch 1 improved, epoch 2 did not
+    assert report.splitlines()[-1] == (
+        "  selection (val joint, image mean) 0.5000  best 0.6000 at epoch 1  stale 1/10"
+    )
+
+
+def test_epoch_report_of_a_clean_only_run_has_no_noisy_row() -> None:
+    report = epoch_report([_history_entry(0, 0.4, groups=("clean",))], 0, 10)
+    assert "val clean" in report
+    assert "val noisy" not in report
+
+
+def test_epoch_report_without_a_finite_score() -> None:
+    report = epoch_report([_history_entry(0, float("nan"))], stale=1, patience=10)
+    assert "best none yet  stale 1/10" in report

@@ -47,6 +47,70 @@ class PreliminaryRunSettings:
         return {**asdict(self), "run": self.run.to_dict()}
 
 
+LOSS_NAMES = ("observed_parent", "corrective_parent", "action")
+ACCURACY_NAMES = (
+    "observed_parent_accuracy",
+    "corrective_parent_accuracy",
+    "action_accuracy",
+    "joint_correction_accuracy",
+)
+
+
+def epoch_report(history: list[dict], stale: int, patience: int) -> str:
+    """Console summary of the latest epoch, one row per loss or accuracy source.
+
+    Train losses are means over the epoch while the weights change, so they are
+    not directly comparable with validation losses measured after it.
+    """
+    entry = history[-1]
+    train, validation = entry["train"], entry["validation"]
+    # The best checkpoint is the last epoch that improved, stale epochs ago.
+    # Every epoch so far is stale when no score has been finite.
+    best = history[-1 - stale] if stale < len(history) else None
+
+    def row(label: str, values: list[float]) -> str:
+        return f"  {label:<24}" + "".join(f"{value:>12.4f}" for value in values)
+
+    lines = [
+        f"epoch {entry['epoch']}  lr {entry['learning_rate']:.1e}  "
+        f"{entry['seconds']:.0f}s",
+        f"  {'loss':<24}"
+        + "".join(f"{name:>12}" for name in ("observed", "corrective", "action"))
+        + f"{'total':>12}",
+        row(
+            "train (epoch mean)", [train[n] for n in LOSS_NAMES] + [sum(train.values())]
+        ),
+        row(
+            "val",
+            [validation[f"loss/{n}"] for n in LOSS_NAMES]
+            + [sum(validation[f"loss/{n}"] for n in LOSS_NAMES)],
+        ),
+        f"  {'accuracy, image mean':<24}"
+        + "".join(
+            f"{name:>12}" for name in ("observed", "corrective", "action", "joint")
+        ),
+    ]
+    # A clean-only run has no noisy group
+    for group in ("clean", "noisy"):
+        if f"{group}/images" in validation:
+            lines.append(
+                row(
+                    f"val {group}",
+                    [validation[f"{group}/{n}/image_mean"] for n in ACCURACY_NAMES],
+                )
+            )
+    best_text = (
+        "none yet"
+        if best is None
+        else f"{best['validation'][SELECTION_METRIC]:.4f} at epoch {best['epoch']}"
+    )
+    lines.append(
+        f"  selection (val joint, image mean) {validation[SELECTION_METRIC]:.4f}  "
+        f"best {best_text}  stale {stale}/{patience}"
+    )
+    return "\n".join(lines)
+
+
 def fit(
     settings: PreliminaryRunSettings,
     run_directory: str | Path,
@@ -158,10 +222,8 @@ def fit(
         mean_seconds = sum(entry["seconds"] for entry in history) / len(history)
         remaining_hours = mean_seconds * (settings.max_epochs - epoch - 1) / 3600
         print(
-            f"epoch {epoch}  train loss {sum(train.values()):.4f}  "
-            f"val selection {score:.4f}  best {best:.4f}  "
-            f"lr {optimizer.param_groups[0]['lr']:.1e}  "
-            f"{history[-1]['seconds']:.0f}s  at most {remaining_hours:.1f}h left",
+            epoch_report(history, stale, settings.early_stopping_patience)
+            + f"\n  at most {remaining_hours:.1f}h left\n",
             flush=True,
         )
 

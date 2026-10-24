@@ -1,4 +1,4 @@
-"""Hard decoding of predicted corrective pointers and actions into a hierarchical structure."""
+"""Hard decoding of corrective pointers and actions into a hierarchical structure."""
 
 from dataclasses import dataclass
 from enum import StrEnum

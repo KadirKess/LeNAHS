@@ -27,7 +27,7 @@ def _build_flat_zones(
     height, width = image.shape
     for row in range(height):
         for column in range(width):
-            # Previously assigned pixels belong to a flat zone grown from an earlier anchor
+            # Already labelled pixels belong to a zone grown from an earlier anchor
             if label_map[row, column] != -1:
                 continue
 

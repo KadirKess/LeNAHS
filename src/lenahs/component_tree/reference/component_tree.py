@@ -39,7 +39,7 @@ def _join_components(
     if left_root == right_root:
         return left_root
 
-    # Union by rank: attach the smaller tree to the root of the larger tree (faster find)
+    # Union by rank: attach the smaller tree to the larger tree root (faster find)
     if ranks[left_root] < ranks[right_root]:
         left_root, right_root = right_root, left_root
 
@@ -126,7 +126,7 @@ def build_reference_component_tree(
             if new_root in current_nodes_by_root:
                 absorbed_representatives.setdefault(new_root, []).append(representative)
 
-        # Choose the new representatives and attach their candidates and child components
+        # Choose new representatives, then attach their candidates and child components
         for root, nodes in current_nodes_by_root.items():
             candidates = np.asarray(nodes, dtype=np.int64)
             representative = choose_representative(
